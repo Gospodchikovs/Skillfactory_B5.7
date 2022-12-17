@@ -2,15 +2,12 @@ from sea_battle import Dot, Ship, Board
 
 def test_dot():
     coordinates = Dot(10,20)
-    assert coordinates == [10,20]
+    assert coordinates == Dot(10,20)
     assert coordinates.x == 10
     assert coordinates.y == 20
-    assert coordinates.xy == Dot(10,20)
 
 def test_ship():
     ship = Ship(Dot(1,2), 3, True)
-    assert ship.length == 3
-    assert ship.number_life == 3
     ship.number_life -= 1
     assert ship.number_life == 2
     ship.not_sunked_ships = 10
