@@ -23,7 +23,7 @@
 # В случае, если возникают непредвиденные ситуации, выбрасывать и обрабатывать исключения.
 # Буквой X помечаются подбитые корабли, буквой T — промахи.
 # Побеждает тот, кто быстрее всех разгромит корабли противника.
-from random import random, randint
+from random import randint
 
 ROWS = 6            # размер игорового поля
 COLUMNS = 6
@@ -34,26 +34,137 @@ ITEM_MISS = 'T'     # в ячейке промах
 ITEM_SUNK = 'X'     # в ячейке потпленный корабль или его часть
 
 
-class PlayField:
-    __columns = COLUMNS
-    __rows = ROWS
-    play_field = []
-    is_visible = False
+class GameExeptions:
+    def board_out_exception(self):
+        pass
 
-    def __init__(self, ships):
-        self.play_field = [[ITEM_EMPTY] * self.columns for _ in range(self.rows)]
-        for ship in ships:
-            for item in range(0, ship.decks):
-                self.set_item(ship.get_coordinates()[item*2], ship.get_coordinates()[item*2 + 1], ITEM_SHIP)
+class Dot:
+    def __init__(self,  x=0, y=0):
+        self.__x = x
+        self.__y = y
+
+    def __eq__(self, coordinates):
+        a = self.__x == coordinates[0]
+        b = self.__y == coordinates[1]
+        return a and b
+
+    @property
+    def x(self):
+        return self.__x
+
+    @property
+    def y(self):
+        return self.__y
+
+    @property
+    def xy(self):
+        return [self.x, self.y]
+
+
+class Ship:
+    def __init__(self, coordinates_bow = None, length = 0, orientation_is_horizontal = True):
+        self.__coordinates_bow = coordinates_bow                                # координаты носа корабля
+        self.__orientation_is_horizontal = orientation_is_horizontal            # ориентация горизонтальная/вертикальная
+        self.__length = length                                                  # длина корабля
+        self.__number_life = length                                             # число оставшихя жизней
+        self.__coordinates = []                                                 # список координат корабля
+        for i in range(length):
+            x = coordinates_bow.x + i*int(self.__orientation_is_horizontal)
+            y = coordinates_bow.y + i*int(not self.__orientation_is_horizontal)
+            self.__coordinates.append(Dot(x, y))
+
+
+    @property
+    def length(self):                                                           # длина корабля
+        return self.__length
+
+    @property
+    def dots(self):                                                             # получение спискам коорлинат корабля
+        return self.__coordinates
+
+    @property
+    def number_life(self):
+        return self.__number_life
+
+    @number_life.setter
+    def number_life(self, value):
+        self.__number_life = value
+
+class Board:
+    def __init__(self, is_visible = False):
+        self.__columns = COLUMNS
+        self.__rows = ROWS
+        self.__play_field = [[ITEM_EMPTY] * self.__columns for _ in range(self.__rows)]
+        self.__ships = []
+        self.__hid = not is_visible
+        self.__not_sunked_ships = 0
+
+    def add_ship(self, ship):
+        for ship_coordinates in self.contour(ship):                 # проверяем контур, точки за границей сюда не входят
+            if self.get_item(ship_coordinates) == ITEM_SHIP:
+                return False
+        for ship_coordinates in ship.dots:                          # проверяем сам корабль на выход за границы
+            if self.out(ship_coordinates):
+                return False
+        for ship_coordinates in ship.dots:
+            self.set_item(ship_coordinates, ITEM_SHIP)              # добавляем точки на доску
+        self.__ships.append(ship)
+        self.__not_sunked_ships += 1
+        return True
+
+    def contour(self, ship):                        # список точек корабля вместе с контуром
+        contour = []
+        for ship_coordinates in ship.dots:
+            for delta_x in range(-1,2):
+                for delta_y in range (-1,2):
+                    x = ship_coordinates.x + delta_x
+                    y = ship_coordinates.y + delta_y
+                    if not self.out(Dot(x,y)):
+                        contour.append(Dot(x,y))
+        return contour
+
+    def clear(self):
+        for i in range(self.rows):
+            for j in range(self.columns):
+                self.set_item(Dot(i+1,j+1), ITEM_EMPTY)
+        self.__not_sunked_ships = 0
+        self.__ships = []
+
+    def out(self, coordinates):
+        return not (coordinates.x in range(1, self.columns+1) and coordinates.y in range(1, self.rows+1))
+
+    def shot(self, shot_coordinates):
+        item = self.get_item(shot_coordinates)
+        if item == ITEM_SHIP:
+            self.set_item(shot_coordinates, ITEM_SUNK)
+            for ship in self.__ships:
+                for coordinates in ship.dots:
+                    if coordinates == [shot_coordinates.x,shot_coordinates.y]:
+                        ship.number_life -= 1
+                        if ship.number_life == 0:
+                            self.__not_sunked_ships -= 1
+            return True                                         # попадание по кораблю
+        else:
+            self.set_item(shot_coordinates, ITEM_MISS)
+            return False                                        # нет попадания по кораблю
+
+    @property
+    def not_sunked_ships(self):
+        return self.__not_sunked_ships
 
     def print_row(self, row, end_string):
+        # выводим строку доски в консоль
         # row == 0 - печатаем заглавнеую строку с номерами столбцов
         if row:
             items = map(lambda item: item if self.visible or item != ITEM_SHIP else ITEM_EMPTY,
-                        self.play_field[row - 1])
+                        self.__play_field[row - 1])
             print(row, *items, sep=' | ', end=end_string)
         else:
             print(' ', *range(1, self.rows + 1), sep=' | ', end=end_string)
+
+    def show(self):
+        for i in range(self.rows + 1):
+            self.print_row(i, '\n')
 
     @property
     def rows(self):
@@ -65,113 +176,140 @@ class PlayField:
 
     @property
     def visible(self):
-        return self.is_visible
+        return not self.__hid
 
     @visible.setter                                     # определяет нужно ли показвать корабли на поле
     def visible(self, value):
-        self.is_visible = value
+        self.__hid = not value
 
-    def get_item(self, x, y):
-        return self.play_field[y-1][x-1]
+    def get_item(self, coordinates):
+        return self.__play_field[coordinates.y-1][coordinates.x-1]
 
-    def set_item(self, x, y, value):
-        self.play_field[y-1][x-1] = value
+    def set_item(self, coordinates, value):
+        self.__play_field[coordinates.y-1][coordinates.x-1] = value
 
-    def check(self, x, y):
-        return self.get_item(x, y) == ITEM_SHIP
+class Player:
+    def __init__(self, board_self, board_opponent):
+        self.__board_self = board_self
+        self.__board_opponent = board_opponent
+
+    def ask(self):
+        pass
+
+    def check(self, coordinates):
+        item = self.__board_opponent.get_item(coordinates)
+        return item != ITEM_SUNK and item != ITEM_MISS
+
+    def move(self):
+        coordinates = self.ask()
+        return self.__board_opponent.shot(coordinates)
+
+class User(Player):
+    def ask(self):
+        while True:
+            coordinates = input(
+                '\nВведите координаты хода в формате \'X Y\', где X-столбец, а Y-строка (q - выход): ').split()
+            if len(coordinates) and coordinates[0] == 'q':
+                exit(0)
+            if len(coordinates) != 2:
+                print('Формат ввода не соответствует запрашиваемому \'X Y\'!')
+            elif not (coordinates[0].isnumeric() and coordinates[1].isnumeric()):
+                print('Необходимо вводить только положительные целые числа!')
+            elif not (int(coordinates[0]) in range(1, COLUMNS + 1) and int(coordinates[1]) in range(1, ROWS + 1)):
+                print(f'Необходимо вводить числа в диапазоне от 1 до {COLUMNS} для Х и от 1 до {COLUMNS} для Y!')
+            elif not self.check(Dot(int(coordinates[0]), int(coordinates[1]))):
+                print('Такой ход уже был сделан ранее! Попробуйте снова.')
+            else:
+                return Dot(int(coordinates[0]), int(coordinates[1]))
 
 
-class Ship:
-    __coordinates = None                                   # список координат всех палуб корабля
+class Ai(Player):
+    def ask(self):
+        while True:
+            x = randint(1, COLUMNS)
+            y = randint(1, ROWS)
+            if self.check(Dot(x,y)):
+                return Dot(x, y)
 
-    def __init__(self, coordinates):
-        self.__coordinates = coordinates.copy()
+class Game:
+    def __init__(self):
+        self.__board_human = Board(True)
+        self.__board_ai = Board(True)
+        self.__human = User(self.__board_human, self.__board_ai)
+        self.__ai = Ai(self.__board_ai, self.__board_human)
 
-    @property
-    def decks(self):                                     # количество палуб
-        return int(len(self.__coordinates) / 2)
+    def random_board_human(self):
+        return self.random_board(self.__board_human)
 
-    def get_coordinates(self):                          # получение спискам коорлинат корабля
-        return self.__coordinates
+    def random_board_ai(self):
+        return  self.random_board(self.__board_ai)
 
+    def random_board(self, board):
+        board.clear()
+        ships_total = [(3,1),(2,2),(1,4)]               # сколько и каких кораблей генерируем
+        for ships in ships_total:
+            for _ in range(ships[1]):
+                for attempt_counter in reversed(range(10000)):
+                    coordinates_bow = Dot(randint(1, COLUMNS), randint(1, ROWS))
+                    number_life = ships[0]
+                    orientation = bool(randint(0,1))
+                    if board.add_ship(Ship(coordinates_bow, number_life, orientation)):
+                        break
+                if not attempt_counter:
+                    return False                        # неудачная попытка
+        return True                                     # все корабли расставлены
 
-def print_fileds(field1, field2):
-    print('      Доска человека      ', ' '*GAP, '   Доска компьютера')
-    for i in range(field1.rows + 1):
-        field1.print_row(i, ' '*GAP)
-        field2.print_row(i, '\n')
+    def show_boards(self):
+        count_human = self.__board_human.not_sunked_ships
+        count_ai = self.__board_ai.not_sunked_ships
+        print('Осталось потопить - ', count_human, ' ' * GAP, ' Осталось потопить - ', count_ai)
+        for i in range(ROWS + 1):
+                self.__board_human.print_row(i, ' ' * GAP)
+                self.__board_ai.print_row(i, '\n')
 
+    def greet(self):
+        print('Игра "Морской бой". Для хода необходимо вводить координаты в виде \'X Y\', где X-столбец, а Y-строка\n')
 
-def human_get_coordinates(field):
-    while True:
-        coordinates = input(
-            '\nВведите координаты хода в формате \'X Y\', где X-столбец, а Y-строка (q - выход): ').split()
-        if coordinates[0] == 'q':
-            exit(0)
-        if len(coordinates) != 2:
-            print('Формат ввода не соответствует запрашиваемому \'X Y\'!')
-        elif not (coordinates[0].isnumeric() and coordinates[1].isnumeric()):
-            print('Необходимо вводить только положительные целые числа!')
-        elif not (int(coordinates[0]) in range(1,COLUMNS+1) and int(coordinates[1]) in range(1,ROWS+1)):
-            print(f'Необходимо вводить числа в диапазоне от 1 до {COLUMNS} для Х и от 1 до {COLUMNS} для Y!')
-        elif field.get_item(int(coordinates[0]), int(coordinates[1])) == ITEM_SUNK or \
-                field.get_item(int(coordinates[0]), int(coordinates[1])) == ITEM_MISS:
-            print('Такой ход уже был сделан ранее! Попробуйте снова.')
+    def loop(self):
+        plays_human = True
+        while True:
+            if plays_human:
+                if self.__human.move():
+                    print('Попадание! Снова Ваш ход.\n')
+                else:
+                    plays_human = False
+                    print('Промах! Мой ход. Нажмите <Enter>', end='')
+                    input()
+                    print('')
+            else:
+                if self.__ai.move():
+                    print(f'\n Попадание! Снова мой ход. Нажмите <Enter>', end='')
+                    input()
+                    print('')
+                else:
+                    plays_human = True
+                    print(f'\nПромах! Ваш ход!\n')
+            self.show_boards()
+            if not (self.__board_human.not_sunked_ships and self.__board_ai.not_sunked_ships):
+                break
+        if plays_human:
+            print('Вы выиграли!')
         else:
-            return int(coordinates[0]), int(coordinates[1])
+            print('Я выиграл!')
 
-
-def comp_get_coordinates(field):
-    while True:
-        x = randint(1, COLUMNS)
-        y = randint(1, ROWS)
-        if field.get_item(x, y) != ITEM_SUNK and field.get_item(x, y) != ITEM_MISS:
-            return x, y
-
+    def start(self):
+        while not self.random_board_human():
+            pass
+        while not self.random_board_ai():
+            pass
+        self.greet()
+        self.show_boards()
+        self.loop()
 
 def main():
-    play_count = None
-    human_ships_coordinates = [1, 2, 1, 3, 1, 4], [3, 3, 3, 4], [5, 3, 6, 3], [2, 6], [3, 1], [5, 6], [5, 1]
-    comp_ships_coordinates = [1, 2, 2, 2, 3, 2], [1, 4, 1, 5], [6, 5, 6, 6], [3, 6], [6, 3], [4, 4], [5, 1]
-    human_ships = []
-    comp_ships = []
-    for coordinates in human_ships_coordinates:
-        human_ships.append(Ship(coordinates))
-    for coordinates in comp_ships_coordinates:
-        comp_ships.append(Ship(coordinates))
-    human_play_field = PlayField(human_ships)
-    comp_play_field = PlayField(comp_ships)
-    human_play_field.visible = True
-    comp_play_field.visible = True
-    plays_human = True
-    for play_count in reversed(range(ROWS * COLUMNS)):
-        print_fileds(human_play_field, comp_play_field)
-        if plays_human:
-            x, y = human_get_coordinates(comp_play_field)
-        else:
-            x, y = comp_get_coordinates(human_play_field)
-        if plays_human:
-            if comp_play_field.check(x, y):
-                comp_play_field.set_item(x, y, ITEM_SUNK)
-                print('Попадание! Снова Ваш ход.\n')
-            else:
-                comp_play_field.set_item(x, y, ITEM_MISS)
-                plays_human = False
-                print('Промах! Мой ход. Нажмите <Enter>', end='')
-                input()
-        else:
-            if human_play_field.check(x, y):
-                human_play_field.set_item(x, y, ITEM_SUNK)
-                print(f'\n Попадание по координатам {x, y}. Снова мой ход. Нажмите <Enter>', end='')
-                input()
-            else:
-                human_play_field.set_item(x, y, ITEM_MISS)
-                plays_human = True
-                print(f'\nПромах по координатам {x, y}. Ваш ход!\n')
-    if play_count:
-        print('Выиграли')
-    else:
-        print('Ничья!')
+    game = Game()
+    game.start()
+
 
 if __name__ == '__main__':
     main()
