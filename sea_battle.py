@@ -44,8 +44,8 @@ class Dot:
         self.__y = y
 
     def __eq__(self, coordinates):
-        a = self.__x == coordinates[0]
-        b = self.__y == coordinates[1]
+        a = self.__x == coordinates.x
+        b = self.__y == coordinates.y
         return a and b
 
     @property
@@ -55,10 +55,6 @@ class Dot:
     @property
     def y(self):
         return self.__y
-
-    @property
-    def xy(self):
-        return [self.x, self.y]
 
 
 class Ship:
@@ -72,11 +68,6 @@ class Ship:
             x = coordinates_bow.x + i*int(self.__orientation_is_horizontal)
             y = coordinates_bow.y + i*int(not self.__orientation_is_horizontal)
             self.__coordinates.append(Dot(x, y))
-
-
-    @property
-    def length(self):                                                           # длина корабля
-        return self.__length
 
     @property
     def dots(self):                                                             # получение спискам коорлинат корабля
@@ -92,9 +83,7 @@ class Ship:
 
 class Board:
     def __init__(self, is_visible = False):
-        self.__columns = COLUMNS
-        self.__rows = ROWS
-        self.__play_field = [[ITEM_EMPTY] * self.__columns for _ in range(self.__rows)]
+        self.__play_field = [[ITEM_EMPTY] * COLUMNS for _ in range(ROWS)]
         self.__ships = []
         self.__hid = not is_visible
         self.__not_sunked_ships = 0
@@ -124,14 +113,14 @@ class Board:
         return contour
 
     def clear(self):
-        for i in range(self.rows):
-            for j in range(self.columns):
-                self.set_item(Dot(i+1,j+1), ITEM_EMPTY)
+        for i in range(ROWS):
+            for j in range(COLUMNS):
+                self.set_item(Dot(i+1, j+1), ITEM_EMPTY)
         self.__not_sunked_ships = 0
         self.__ships = []
 
     def out(self, coordinates):
-        return not (coordinates.x in range(1, self.columns+1) and coordinates.y in range(1, self.rows+1))
+        return not (coordinates.x in range(1, COLUMNS+1) and coordinates.y in range(1, ROWS))
 
     def shot(self, shot_coordinates):
         item = self.get_item(shot_coordinates)
@@ -139,14 +128,18 @@ class Board:
             self.set_item(shot_coordinates, ITEM_SUNK)
             for ship in self.__ships:
                 for coordinates in ship.dots:
-                    if coordinates == [shot_coordinates.x,shot_coordinates.y]:
+                    if coordinates == shot_coordinates:
                         ship.number_life -= 1
-                        if ship.number_life == 0:
+                        if not ship.number_life:
                             self.__not_sunked_ships -= 1
             return True                                         # попадание по кораблю
         else:
             self.set_item(shot_coordinates, ITEM_MISS)
             return False                                        # нет попадания по кораблю
+
+    def check(self, coordinates):                               # проверка точки лоски на повторное попалание
+        item = self.get_item(coordinates)
+        return item != ITEM_SUNK and item != ITEM_MISS
 
     @property
     def not_sunked_ships(self):
@@ -156,31 +149,15 @@ class Board:
         # выводим строку доски в консоль
         # row == 0 - печатаем заглавнеую строку с номерами столбцов
         if row:
-            items = map(lambda item: item if self.visible or item != ITEM_SHIP else ITEM_EMPTY,
+            items = map(lambda item: item if not self.__hid or item != ITEM_SHIP else ITEM_EMPTY,
                         self.__play_field[row - 1])
             print(row, *items, sep=' | ', end=end_string)
         else:
-            print(' ', *range(1, self.rows + 1), sep=' | ', end=end_string)
+            print(' ', *range(1, ROWS + 1), sep=' | ', end=end_string)
 
     def show(self):
-        for i in range(self.rows + 1):
+        for i in range(ROWS + 1):
             self.print_row(i, '\n')
-
-    @property
-    def rows(self):
-        return self.__rows
-
-    @property
-    def columns(self):
-        return self.__columns
-
-    @property
-    def visible(self):
-        return not self.__hid
-
-    @visible.setter                                     # определяет нужно ли показвать корабли на поле
-    def visible(self, value):
-        self.__hid = not value
 
     def get_item(self, coordinates):
         return self.__play_field[coordinates.y-1][coordinates.x-1]
@@ -197,8 +174,7 @@ class Player:
         pass
 
     def check(self, coordinates):
-        item = self.__board_opponent.get_item(coordinates)
-        return item != ITEM_SUNK and item != ITEM_MISS
+        return self.__board_opponent.check(coordinates)
 
     def move(self):
         coordinates = self.ask()
