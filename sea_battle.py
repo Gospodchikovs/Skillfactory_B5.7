@@ -132,7 +132,7 @@ class Board:
             for j in range(COLUMNS):
                 self.set_item(Dot(i+1, j+1), ITEM_EMPTY)
         self.__not_sunked_ships = 0
-        self.__ships = []
+        del self.__ships[:]
 
     @staticmethod                                                   # проверка за выход точки за пределы доски
     def out(coordinates):
