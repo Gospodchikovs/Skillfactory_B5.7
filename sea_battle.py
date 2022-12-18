@@ -34,9 +34,23 @@ ITEM_MISS = 'T'     # в ячейке промах
 ITEM_SUNK = 'X'     # в ячейке потпленный корабль или его часть
 
 
-class GameExeptions:
-    def board_out_exception(self):
-        pass
+class GameException(Exception):
+    pass
+
+
+class GameOutCoordinatesException(GameException):
+    def __str__(self):
+        return f'Необходимо вводить числа в диапазоне от 1 до {COLUMNS} для Х и от 1 до {COLUMNS} для Y!'
+
+
+class GameShotIsRepeated(GameException):
+    def __str__(self):
+        return 'Такой ход уже был сделан ранее! Попробуйте снова.'
+
+
+class GameAddShipException(GameException):
+    pass
+
 
 class Dot:
     def __init__(self,  x=0, y=0):
@@ -58,7 +72,7 @@ class Dot:
 
 
 class Ship:
-    def __init__(self, coordinates_bow = None, length = 0, orientation_is_horizontal = True):
+    def __init__(self, coordinates_bow=None, length=0, orientation_is_horizontal=True):
         self.__coordinates_bow = coordinates_bow                                # координаты носа корабля
         self.__orientation_is_horizontal = orientation_is_horizontal            # ориентация горизонтальная/вертикальная
         self.__length = length                                                  # длина корабля
@@ -73,7 +87,7 @@ class Ship:
     def dots(self):                                                             # получение спискам коорлинат корабля
         return self.__coordinates
 
-    @property
+    @property                                                                   # число оставшихся жизней
     def number_life(self):
         return self.__number_life
 
@@ -81,48 +95,54 @@ class Ship:
     def number_life(self, value):
         self.__number_life = value
 
+
 class Board:
-    def __init__(self, is_visible = False):
-        self.__play_field = [[ITEM_EMPTY] * COLUMNS for _ in range(ROWS)]
-        self.__ships = []
-        self.__hid = not is_visible
-        self.__not_sunked_ships = 0
+    def __init__(self, is_visible=False):
+        self.__play_field = [[ITEM_EMPTY] * COLUMNS for _ in range(ROWS)]   # игровое поле
+        self.__ships = []                                                   # список кораблей
+        self.__hid = not is_visible                                         # видимость поля
+        self.__not_sunked_ships = 0                                         # количество непотопленных кораблей
 
     def add_ship(self, ship):
         for ship_coordinates in self.contour(ship):                 # проверяем контур, точки за границей сюда не входят
             if self.get_item(ship_coordinates) == ITEM_SHIP:
-                return False
+                raise GameAddShipException()
         for ship_coordinates in ship.dots:                          # проверяем сам корабль на выход за границы
             if self.out(ship_coordinates):
-                return False
+                raise GameAddShipException()
         for ship_coordinates in ship.dots:
             self.set_item(ship_coordinates, ITEM_SHIP)              # добавляем точки на доску
         self.__ships.append(ship)
         self.__not_sunked_ships += 1
         return True
 
-    def contour(self, ship):                        # список точек корабля вместе с контуром
+    def contour(self, ship):                                        # список точек корабля вместе с контуром
         contour = []
         for ship_coordinates in ship.dots:
-            for delta_x in range(-1,2):
-                for delta_y in range (-1,2):
+            for delta_x in range(-1, 2):
+                for delta_y in range(-1, 2):
                     x = ship_coordinates.x + delta_x
                     y = ship_coordinates.y + delta_y
-                    if not self.out(Dot(x,y)):
-                        contour.append(Dot(x,y))
+                    if not self.out(Dot(x, y)):
+                        contour.append(Dot(x, y))
         return contour
 
-    def clear(self):
+    def clear(self):                                                # очищаем поле
         for i in range(ROWS):
             for j in range(COLUMNS):
                 self.set_item(Dot(i+1, j+1), ITEM_EMPTY)
         self.__not_sunked_ships = 0
         self.__ships = []
 
-    def out(self, coordinates):
-        return not (coordinates.x in range(1, COLUMNS+1) and coordinates.y in range(1, ROWS))
+    @staticmethod                                                   # проверка за выход точки за пределы доски
+    def out(coordinates):
+        return not (coordinates.x in range(1, COLUMNS+1) and coordinates.y in range(1, ROWS+1))
 
-    def shot(self, shot_coordinates):
+    def shot(self, shot_coordinates):                               # выстрел по доске
+        if self.out(shot_coordinates):
+            raise GameOutCoordinatesException
+        if not self.check(shot_coordinates):
+            raise GameShotIsRepeated()
         item = self.get_item(shot_coordinates)
         if item == ITEM_SHIP:
             self.set_item(shot_coordinates, ITEM_SUNK)
@@ -137,17 +157,15 @@ class Board:
             self.set_item(shot_coordinates, ITEM_MISS)
             return False                                        # нет попадания по кораблю
 
-    def check(self, coordinates):                               # проверка точки лоски на повторное попалание
+    def check(self, coordinates):                               # проверка точки доски на повторное попалание
         item = self.get_item(coordinates)
         return item != ITEM_SUNK and item != ITEM_MISS
 
     @property
-    def not_sunked_ships(self):
+    def not_sunked_ships(self):                                 # число оставшихся кораблей
         return self.__not_sunked_ships
 
-    def print_row(self, row, end_string):
-        # выводим строку доски в консоль
-        # row == 0 - печатаем заглавнеую строку с номерами столбцов
+    def print_row(self, row, end_string):                       # печать строки доски (0 - печатаем заголовок)
         if row:
             items = map(lambda item: item if not self.__hid or item != ITEM_SHIP else ITEM_EMPTY,
                         self.__play_field[row - 1])
@@ -155,33 +173,46 @@ class Board:
         else:
             print(' ', *range(1, ROWS + 1), sep=' | ', end=end_string)
 
-    def show(self):
+    def show(self):                                             # показываем всю доску
         for i in range(ROWS + 1):
             self.print_row(i, '\n')
 
-    def get_item(self, coordinates):
+    def get_item(self, coordinates):                            # получаем элемент доски
         return self.__play_field[coordinates.y-1][coordinates.x-1]
 
-    def set_item(self, coordinates, value):
+    def set_item(self, coordinates, value):                     # устанавливаем жлемент доски
         self.__play_field[coordinates.y-1][coordinates.x-1] = value
+
 
 class Player:
     def __init__(self, board_self, board_opponent):
-        self.__board_self = board_self
-        self.__board_opponent = board_opponent
+        self.__board_self = board_self                          # свое поле
+        self.__board_opponent = board_opponent                  # поле противника
 
     def ask(self):
         pass
 
-    def check(self, coordinates):
+    def check(self, coordinates):                               # проверка точки доски противника на повторное попадание
         return self.__board_opponent.check(coordinates)
 
-    def move(self):
-        coordinates = self.ask()
-        return self.__board_opponent.shot(coordinates)
+    def move(self):                                             # ход по доске противника
+        shot_result = None
+        while True:
+            try:
+                coordinates = self.ask()
+                shot_result = self.__board_opponent.shot(coordinates)
+                break
+            except GameOutCoordinatesException as message:
+                print(message)                                  # выстрел за пределы доски
+                continue
+            except GameShotIsRepeated as message:
+                print(message)                                  # повторный выстрел в ту-же точку
+                continue
+        return shot_result
+
 
 class User(Player):
-    def ask(self):
+    def ask(self):                                               # запрос хода человека
         while True:
             coordinates = input(
                 '\nВведите координаты хода в формате \'X Y\', где X-столбец, а Y-строка (q - выход): ').split()
@@ -191,62 +222,66 @@ class User(Player):
                 print('Формат ввода не соответствует запрашиваемому \'X Y\'!')
             elif not (coordinates[0].isnumeric() and coordinates[1].isnumeric()):
                 print('Необходимо вводить только положительные целые числа!')
-            elif not (int(coordinates[0]) in range(1, COLUMNS + 1) and int(coordinates[1]) in range(1, ROWS + 1)):
-                print(f'Необходимо вводить числа в диапазоне от 1 до {COLUMNS} для Х и от 1 до {COLUMNS} для Y!')
-            elif not self.check(Dot(int(coordinates[0]), int(coordinates[1]))):
-                print('Такой ход уже был сделан ранее! Попробуйте снова.')
             else:
                 return Dot(int(coordinates[0]), int(coordinates[1]))
 
 
 class Ai(Player):
-    def ask(self):
+    def ask(self):                                              # генератор хода компьютера
         while True:
             x = randint(1, COLUMNS)
             y = randint(1, ROWS)
-            if self.check(Dot(x,y)):
+            if self.check(Dot(x, y)):
                 return Dot(x, y)
+
 
 class Game:
     def __init__(self):
-        self.__board_human = Board(True)
-        self.__board_ai = Board(True)
-        self.__human = User(self.__board_human, self.__board_ai)
-        self.__ai = Ai(self.__board_ai, self.__board_human)
+        self.__board_human = Board(True)                            # доска человека
+        self.__board_ai = Board(False)                              # доска компьютера (False - невидима)
+        self.__human = User(self.__board_human, self.__board_ai)    # игрок - человек
+        self.__ai = Ai(self.__board_ai, self.__board_human)         # игрок - компьютер
 
-    def random_board_human(self):
+    def random_board_human(self):                                   # генерация доски человека
         return self.random_board(self.__board_human)
 
-    def random_board_ai(self):
-        return  self.random_board(self.__board_ai)
+    def random_board_ai(self):                                      # генерация доски компьютера
+        return self.random_board(self.__board_ai)
 
-    def random_board(self, board):
+    @staticmethod
+    def random_board(board):                                        # расставляем на лоску корабли
         board.clear()
-        ships_total = [(3,1),(2,2),(1,4)]               # сколько и каких кораблей генерируем
+        ships_total = [(3, 1), (2, 2), (1, 4)]                      # сколько и каких кораблей генерируем
+        attempt_counter = None
         for ships in ships_total:
             for _ in range(ships[1]):
                 for attempt_counter in reversed(range(10000)):
                     coordinates_bow = Dot(randint(1, COLUMNS), randint(1, ROWS))
                     number_life = ships[0]
-                    orientation = bool(randint(0,1))
-                    if board.add_ship(Ship(coordinates_bow, number_life, orientation)):
+                    orientation = bool(randint(0, 1))
+                    try:
+                        board.add_ship(Ship(coordinates_bow, number_life, orientation))
+                    except GameAddShipException:                     # не получилось поставить кораль,
+                        pass
+                    else:
                         break
                 if not attempt_counter:
-                    return False                        # неудачная попытка
-        return True                                     # все корабли расставлены
+                    return False                                      # неудачная попытка
+        return True                                                   # все корабли расставлены
 
-    def show_boards(self):
+    def show_boards(self):                                            # показываем обе доски
         count_human = self.__board_human.not_sunked_ships
         count_ai = self.__board_ai.not_sunked_ships
         print('Осталось потопить - ', count_human, ' ' * GAP, ' Осталось потопить - ', count_ai)
         for i in range(ROWS + 1):
-                self.__board_human.print_row(i, ' ' * GAP)
-                self.__board_ai.print_row(i, '\n')
+            self.__board_human.print_row(i, ' ' * GAP)
+            self.__board_ai.print_row(i, '\n')
 
-    def greet(self):
+    @staticmethod
+    def greet():                                                       # приветствие
         print('Игра "Морской бой". Для хода необходимо вводить координаты в виде \'X Y\', где X-столбец, а Y-строка\n')
 
-    def loop(self):
+    def loop(self):                                                    # основной цикл игры
         plays_human = True
         while True:
             if plays_human:
@@ -274,13 +309,14 @@ class Game:
             print('Я выиграл!')
 
     def start(self):
-        while not self.random_board_human():
+        while not self.random_board_human():                        # генерируем доску человека
             pass
-        while not self.random_board_ai():
+        while not self.random_board_ai():                           # генерируем лоску компьютера
             pass
         self.greet()
         self.show_boards()
         self.loop()
+
 
 def main():
     game = Game()
